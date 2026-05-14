@@ -1,0 +1,52 @@
+## .NET / C#
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.swp
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## ASP.NET Core
+appsettings.*.local.json
+secrets.json
+
+## NuGet
+*.nupkg
+.nuget/
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+## Node / Angular
+node_modules/
+dist/
+.angular/
+*.tgz
+npm-debug.log*
+
+## Azure / Terraform
+.azure/
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Environment
+.env
+.env.local
+.env.production
