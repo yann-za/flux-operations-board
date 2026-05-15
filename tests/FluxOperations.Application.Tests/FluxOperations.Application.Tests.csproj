@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FluxOperations.Application\FluxOperations.Application.csproj" />
     <ProjectReference Include="..\..\src\FluxOperations.Domain\FluxOperations.Domain.csproj" />
+    <ProjectReference Include="..\..\src\FluxOperations.Infrastructure\FluxOperations.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
