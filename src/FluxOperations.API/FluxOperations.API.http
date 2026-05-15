@@ -1,0 +1,6 @@
+@FluxOperations.API_HostAddress = http://localhost:5230
+
+GET {{FluxOperations.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
