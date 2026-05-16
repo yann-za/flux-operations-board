@@ -1,0 +1,190 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - src/**
+      - tests/**
+      - azure/**
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  buildConfiguration: Release
+  dotnetVersion: '8.0.x'
+  nodeVersion: '20.x'
+  solution: 'FluxOperations.sln'
+  apiProject: 'src/FluxOperations.API/FluxOperations.API.csproj'
+  frontendDir: 'src/FluxOperations.Frontend'
+
+stages:
+
+# ─── CI Stage ───────────────────────────────────────────────────────────────
+- stage: CI
+  displayName: 'Build & Test'
+  jobs:
+
+  - job: BuildAndTest
+    displayName: '.NET Build + Unit Tests'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+
+    - task: UseDotNet@2
+      displayName: 'Install .NET $(dotnetVersion)'
+      inputs:
+        version: $(dotnetVersion)
+        includePreviewVersions: false
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore NuGet packages'
+      inputs:
+        command: restore
+        projects: $(solution)
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Build solution'
+      inputs:
+        command: build
+        projects: $(solution)
+        arguments: '--configuration $(buildConfiguration) --no-restore'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Run unit tests'
+      inputs:
+        command: test
+        projects: 'tests/**/*.Tests.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage"'
+
+    - task: PublishCodeCoverageResults@1
+      displayName: 'Publish code coverage'
+      inputs:
+        codeCoverageTool: Cobertura
+        summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Publish API'
+      inputs:
+        command: publish
+        publishWebProjects: false
+        projects: $(apiProject)
+        arguments: '--configuration $(buildConfiguration) --no-build --output $(Build.ArtifactStagingDirectory)/api'
+        zipAfterPublish: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish API artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/api'
+        ArtifactName: 'api'
+
+  - job: BuildFrontend
+    displayName: 'Angular Build'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+
+    - task: NodeTool@0
+      displayName: 'Install Node $(nodeVersion)'
+      inputs:
+        versionSpec: $(nodeVersion)
+
+    - script: npm ci
+      displayName: 'npm install'
+      workingDirectory: $(frontendDir)
+
+    - script: npm run build:prod
+      displayName: 'ng build --prod'
+      workingDirectory: $(frontendDir)
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish frontend artifact'
+      inputs:
+        PathtoPublish: '$(frontendDir)/dist/flux-operations-frontend'
+        ArtifactName: 'frontend'
+
+# ─── Deploy Staging ──────────────────────────────────────────────────────────
+- stage: DeployStaging
+  displayName: 'Deploy — Staging'
+  dependsOn: CI
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  variables:
+    - group: FluxOps-Staging
+  jobs:
+
+  - deployment: DeployAPI
+    displayName: 'Deploy API to Staging'
+    environment: 'staging'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+              appName: '$(API_APP_NAME_STAGING)'
+              package: '$(Pipeline.Workspace)/api/*.zip'
+
+  - deployment: DeployFrontend
+    displayName: 'Deploy Frontend to Staging'
+    environment: 'staging'
+    pool:
+      vmImage: 'ubuntu-latest'
+    dependsOn: []
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureStaticWebApp@0
+            inputs:
+              azure_static_web_apps_api_token: '$(STATIC_WEB_APP_TOKEN_STAGING)'
+              app_location: '$(Pipeline.Workspace)/frontend'
+              skip_app_build: true
+
+# ─── Deploy Production ───────────────────────────────────────────────────────
+- stage: DeployProd
+  displayName: 'Deploy — Production'
+  dependsOn: DeployStaging
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+    - group: FluxOps-Production
+  jobs:
+
+  - deployment: DeployAPIProd
+    displayName: 'Deploy API to Production'
+    environment: 'production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+              appName: '$(API_APP_NAME_PROD)'
+              package: '$(Pipeline.Workspace)/api/*.zip'
+              deploymentMethod: zipDeploy
+
+  - deployment: DeployFrontendProd
+    displayName: 'Deploy Frontend to Production'
+    environment: 'production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    dependsOn: []
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureStaticWebApp@0
+            inputs:
+              azure_static_web_apps_api_token: '$(STATIC_WEB_APP_TOKEN_PROD)'
+              app_location: '$(Pipeline.Workspace)/frontend'
+              skip_app_build: true
